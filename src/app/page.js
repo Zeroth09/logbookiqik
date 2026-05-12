@@ -93,10 +93,16 @@ export default function HomePage() {
       const failCount = data.failed || 0;
 
       if (successCount > 0) {
-        showToast(
-          `${successCount} file berhasil diupload${failCount > 0 ? `, ${failCount} gagal` : ""}`,
-          failCount > 0 ? "warning" : "success"
-        );
+        // Tampilkan info kompresi kalau ada
+        const compressedFiles = (data.uploaded || []).filter((f) => f.compressed);
+        let msg = `${successCount} file berhasil diupload`;
+        if (compressedFiles.length > 0) {
+          const savings = compressedFiles.map((f) => f.savings).filter(Boolean).join(", ");
+          msg += ` (dikompresi: ${savings})`;
+        }
+        if (failCount > 0) msg += `, ${failCount} gagal`;
+
+        showToast(msg, failCount > 0 ? "warning" : "success");
         await loadFiles();
       } else {
         showToast("Tidak ada file yang berhasil diupload", "error");

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { uploadFileToR2 } from "@/lib/r2";
+import { compressImage, formatSize } from "@/lib/compress";
 import { v4 as uuidv4 } from "uuid";
 
-// Maksimal ukuran file 50MB
+// Maksimal ukuran file 50MB (sebelum kompresi)
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 // Extensi yang diizinkan
@@ -30,7 +31,7 @@ function sanitizeFilename(filename) {
 
 /**
  * POST /api/upload
- * Upload satu atau banyak file ke R2
+ * Upload file ke R2 — gambar otomatis dikompresi ke ~150KB (WebP)
  */
 export async function POST(request) {
   try {
@@ -58,7 +59,7 @@ export async function POST(request) {
         continue;
       }
 
-      // Validasi ukuran
+      // Validasi ukuran (sebelum kompresi)
       if (file.size > MAX_FILE_SIZE) {
         errors.push({
           name: file.name,
@@ -67,22 +68,39 @@ export async function POST(request) {
         continue;
       }
 
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const ext = file.name.split(".").pop() || "bin";
-      const safeName = sanitizeFilename(file.name.replace(`.${ext}`, ""));
-      const uniqueId = uuidv4().split("-")[0];
-      const key = `${folder}/${uniqueId}_${safeName}.${ext}`;
+      let buffer = Buffer.from(await file.arrayBuffer());
+      let contentType = file.type;
+      const originalSize = buffer.length;
 
-      const result = await uploadFileToR2(buffer, key, file.type, {
+      // Kompresi otomatis untuk gambar
+      const compressed = await compressImage(buffer, contentType);
+      buffer = compressed.buffer;
+      contentType = compressed.contentType;
+
+      // Tentukan ekstensi file final
+      const originalExt = file.name.split(".").pop() || "bin";
+      const finalExt = compressed.compressed ? compressed.newExtension : originalExt;
+      const safeName = sanitizeFilename(file.name.replace(`.${originalExt}`, ""));
+      const uniqueId = uuidv4().split("-")[0];
+      const key = `${folder}/${uniqueId}_${safeName}.${finalExt}`;
+
+      const result = await uploadFileToR2(buffer, key, contentType, {
         originalName: file.name,
+        originalSize: String(originalSize),
+        compressed: String(compressed.compressed),
         uploadedAt: new Date().toISOString(),
       });
 
       results.push({
         ...result,
-        // Override dengan proxy URL yang tidak expire
         url: `/api/file/${key}`,
         originalName: file.name,
+        originalSize,
+        finalSize: buffer.length,
+        compressed: compressed.compressed,
+        savings: compressed.compressed
+          ? `${formatSize(originalSize)} → ${formatSize(buffer.length)}`
+          : null,
       });
     }
 
