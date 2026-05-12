@@ -13,8 +13,14 @@ export async function GET(request) {
 
     const files = await listFilesFromR2(prefix, limit);
 
+    // Filter: sembunyikan file internal sistem (logbook data, dll)
+    const HIDDEN_PREFIXES = ["logbook/"];
+    const publicFiles = files.filter(
+      (file) => !HIDDEN_PREFIXES.some((p) => file.key.startsWith(p))
+    );
+
     // Enrich data: ganti signed URL dengan proxy URL yang lebih bersih
-    const enrichedFiles = files.map((file) => {
+    const enrichedFiles = publicFiles.map((file) => {
       const ext = file.key.split(".").pop()?.toLowerCase() || "";
       const filename = file.key.split("/").pop() || file.key;
 
